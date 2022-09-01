@@ -1,0 +1,287 @@
+---
+title: "Face Perception and Face Memory Testing"
+output:
+  flexdashboard::flex_dashboard:
+    source_code: embed
+    orientation: columns
+    vertical_layout: fill
+    theme:
+      version: 4
+      bootswatch: pulse
+      base_font:
+        google: Fira Sans
+      code_font:
+        google: Fira Mono
+runtime: shiny
+resource_files:
+- boot_anim.gif
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(flexdashboard)
+library(shiny)
+library(showtext)
+library(googlesheets4)
+library(reactable)
+library(bslib)
+library(ggcorrplot)
+
+# Calculate p-values on boot_distribution
+calculate_p <- function(obs, Bmeans, adj = c("boot", "perm")) {
+    if (adj == "boot") {
+      adjustment = 2
+    }
+    if (adj == "perm") {
+      adjustment = 1
+    }
+    BdistN <- length(Bmeans)
+    p_in_dist <- (1 + sum(Bmeans >= obs)) / (BdistN + adjustment)
+    if (obs <= mean(Bmeans)) {
+      p <- 1 - p_in_dist
+    } else {
+      p <- p_in_dist
+    }
+    p
+}
+
+# Make googlesheets4 not try to authenticate, since we're using a public sheet
+gs4_deauth()
+
+font_add_google(name = "Fira Sans", family = "Fira Sans");
+```
+
+
+```{r get-data-exp2, message=FALSE, include=FALSE}
+remote_data_face <- read_sheet("1sA2mlYdRf3sd03ZtgZnfXvynQOWPYvdYj_jtaYkXay4") %>%
+  add_column(participant = paste0("P", 
+                                  sprintf("%02d", 1:nrow(.))),
+             .before = 1)
+```
+
+
+Introduction
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+### Introduction
+
+#### The experiment
+
+You participated in the [Cambridge Face Memory Test](http://www.bbk.ac.uk/psychology/psychologyexperiments/experiments/facememorytest/startup.php?r=8&p=0&d=1&dn=0&g=0&m=68f7d848edeaebd6cc29371b806b3017), which is described in [Duchaine & Nakayama (2006)](https://drive.google.com/file/d/15nLMj4Y8CmoRomh6Qa-hg_q00-rcjYMK/view?usp=sharing).
+
+#### The goal
+
+The goal of this activity is to discuss the results of our experiment compared to the original results.
+
+
+#### The analysis
+
+In order to discuss the results, we will discuss the notion of [_statistical model_](https://docs.google.com/presentation/d/1bF00zqHuDxG3iL48joMoZBeMtmHnvOqCzL2tuzPP-bk/edit?usp=sharing), and how we can create one to help us understand what inferences may be licensed from our data.
+
+
+Data analysis
+=======================================================================
+
+Column {.sidebar data-width=200}
+-----------------------------------------------------------------------
+
+#### Face Memory
+
+```{r}
+selectInput("dataset_id", label = "Dataset:",
+            choices = sort(unique(remote_data_face$Class)), selected = 1)
+
+sliderInput("n_boot", label = "Number of Resamples:",
+            min = 1, max = 5*10^4, value = 10, step = 100)
+
+radioButtons("ci", 
+             label = "Coverage (in %) of Resampled Means:",
+             choices = list("99%" = "0.005,0.5,0.985",
+                            "95%" = "0.025,0.5,0.975",
+                            "90%" = "0.05,0.5,0.95", 
+                            "80%" = "0.1,0.5,0.9", 
+                            "68%" = "0.16,0.5,0.84"),
+             selected = "0.025,0.5,0.975")
+
+numericInput("obs", 
+             label = "Probability of values like the following (or more extreme):",
+            min = 0, max = 1, step = .01, value = .5)
+```
+
+
+Column {.tabset .tabset-fade data-width=800}
+-----------------------------------------------------------------------
+
+### Histogram of Original Data
+
+```{r, fig.showtext=TRUE}
+#thematic_on(font = "Fira Sans")
+datasetOrig <- reactive({
+  remote_data_face %>%
+    filter(Class == input$dataset_id) %>%
+    pull()
+})
+
+renderPlot({
+  orig_mean <- mean(datasetOrig())
+  orig_sd <- sd(datasetOrig())
+  showtext_begin()  
+  hist_orig_data <- hist(datasetOrig(), 
+                         xlim = c(0.5, 1),
+                         xlab = "Percent Correct",
+                         col = "#ecf0f1", # "#76818c", #2d3e4f",
+                         family = "Fira Sans",
+                         main = paste0(input$dataset_id,
+                                       "\nMean Percent Correct: ",
+                                       round(orig_mean, digits = 2) * 100, 
+                                       "% (SD = ", 
+                                       round(orig_sd, digits = 2) * 100,
+                                       ")"),
+                         cex.lab = 1.5,
+                         cex.axis = 1.5,
+                         las = 1)
+  abline(v = orig_mean, col = "#e54d42", lwd = 4)
+  text(orig_mean, max(hist_orig_data$counts), 
+       labels = round(orig_mean, digits = 2), 
+       pos = 4, offset = .5, font = 2, col = "#e54d42")
+  showtext_end()
+})
+```
+
+### Data Analysis Model
+
+
+#### The data model to evaluate
+
+**Sampling with replacement**: This means that we take samples of size N (= 16 in our case) where each individual participant can be drawn zero, one or multiple times. The animation below shows this in graphic format: The original data of five participants (each represented by a different color in the first column) is **sampled with replacement** 10 times, creating 10 new datasets that are each a recombination of the original data:
+
+![Animation of sampling with replacement](./boot_anim.gif)
+
+#### More details
+
+The technical name for this way of analyzing the data is **bootstrapping**. 
+
+The rationale is basically this: we use the data we obtained to try to reach a conclusion about other possible data **like ours** that could have been observed (but were not).
+
+What does "**data like ours**" mean here? Our participants were obtained in what is called a **convenience sample**, so we cannot really reproduce their selection in a different experiment. What we **can** do is make an assumption: 
+
+* **Assumption:** If we were able to select other participants that were **like the ones we selected** in the relevant dimensions that we care about (maybe age, or educational level, or whatever), they would behave **like the participants we did observe**.
+
+* **Consequence of the assumption:** The variability of the data that we did observe can serve as a **proxy** for the variability of the data that we would like to observe but did not (or cannot).
+
+By **sampling with replacement** we operationalize our assumption and create a series of synthetic datasets that are **like ours** in the relevant sense (because they are all really just a recombination of the original data). This allow us to see how much variability our mean result (here, _mean percent correct_) could vary from sample to sample. This gives us a sense of what range of values would be expected if we ended up testing other samples **like ours**.
+
+This may inform your conclusions in a number of ways, for e.g.:
+
+* **Tentatively interpreting data from other studies:** If there are one or more results from the same study in other populations, you can compare yours and theirs to see if they are **like each other** or not. Here, "**being like each other**" means that this other result is one that would be expected to occur in our synthetic datasets (our simulations) reasonably frequently. If it is not, then maybe we have grounds to believe the two samples we are comparing are **not** like each other.
+
+* **Setting up expectations for a replication study:** Once you have a sense of how much variation you are likely to observe if you tested another sample **like ours** (same size, selection criteria, etc.), you can plan a replication study with clearer expectations for the range of variation you could reasonably expect to observe.
+
+
+### Histogram of Resampled Datasets Means
+
+```{r}
+resamples <- reactive({
+  boot_mat <- replicate(input$n_boot,
+                        sample(datasetOrig(),
+                               size = length(datasetOrig()),
+                               replace = TRUE))
+  colnames(boot_mat) <- paste0("Resamp\n", sprintf("%05d", 1:ncol(boot_mat)))
+  boot_mat
+})
+
+renderPlot({
+  boot_means <- colMeans(resamples())
+  boot_ci <- quantile(boot_means, as.numeric(unlist(str_split(input$ci, ","))))
+  showtext_begin()  
+  hist_data <- hist(boot_means,
+                    main = paste0(input$dataset_id,
+                                  "\nHistogram of the Average 'Mean Percent Correct' group response\nobtained in ", input$n_boot, 
+                                  " resamples of the original dataset"),
+                    xlim = c(0.6, 1),
+                    xlab = "Percent Correct",
+                    col = "#ecf0f1", 
+                    family = "Fira Sans",
+                    cex.lab = 1.5,
+                    cex.axis = 1.5,
+                    las = 1
+  )
+  abline(v = boot_ci, col = "#e54d42", lwd = 4)
+  text(boot_ci, c(max(hist_data$counts)/2,
+                  max(hist_data$counts),
+                  max(hist_data$counts)/2), 
+       labels = round(boot_ci, 2), 
+       pos = c(2, 4, 4), offset = .5, font = 2, col = "#e54d42")
+  abline(v = input$obs, col = "#2a85c4", lwd = 4, lty = 2)
+  text(input$obs, max(hist_data$counts),
+       labels = paste0("p = ", round(calculate_p(input$obs, boot_means), digits = 4)), 
+       pos = 2, offset = .5, font = 2, col = "#2a85c4")
+  showtext_end()  
+})
+```
+
+### Original Results + 10 Randomly Selected Resamples
+
+```{r}
+renderReactable({
+  new_dataset_name <- str_replace(input$dataset_id, "_", "\n")
+  tibbleOrig <- remote_data_face %>%
+    filter(Class == input$dataset_id)
+  data_table <- bind_cols(
+    select(tibbleOrig, Participant = participant, CFMT_Real),
+    as_tibble(resamples()[, sample(input$n_boot, size = 10,
+                                   replace = FALSE)])
+  )
+  new_colnames <- colnames(data_table)
+  new_colnames[2] <- new_dataset_name
+  colnames(data_table) <- new_colnames
+  
+  reactable(
+    data_table,
+    compact = TRUE,
+    fullWidth = FALSE,
+    defaultPageSize = 16,
+    columns = list(
+      Participant = colDef(footer = "Mean")
+    ),
+    defaultColDef = colDef(
+      format = colFormat(percent = TRUE, digits = 0),
+      footer = function(perc_correct) {
+        paste0(round(mean(perc_correct) * 100, digits = 0), "%")
+      },
+      footerStyle = list(fontWeight = "bold",
+                         format = colFormat(percent = TRUE, digits = 0))
+    ),
+    columnGroups = list(
+      colGroup(name = "Original",
+               columns = colnames(data_table)[1:2]),
+      colGroup(name = "10 Randomly Selected Resampled Datasets",
+               columns = colnames(data_table)[-c(1:2)])
+    )
+  )
+})
+```
+
+
+01 - What is a histogram? {data-navmenu="Videos"}
+=======================================================================
+
+<iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1674401/sp/167440100/embedIframeJs/uiconf_id/23435151/partner_id/1674401?iframeembed=true&playerId=kaltura_player&entry_id=1_km7xp9dk&flashvars[streamerType]=auto&amp;flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[LeadWithHLSOnFlash]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_7220zmx3" width="608" height="402" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="Kaltura Player"></iframe>
+
+02 - Resampling with replacement as a data generating model {data-navmenu="Videos"}
+=======================================================================
+
+<iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1674401/sp/167440100/embedIframeJs/uiconf_id/23435151/partner_id/1674401?iframeembed=true&playerId=kaltura_player&entry_id=1_za5l141j&flashvars[streamerType]=auto&amp;flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[LeadWithHLSOnFlash]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_izr30byr" width="608" height="402" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="Kaltura Player"></iframe>
+
+03 - Interpreting the results of the analysis, part 1 {data-navmenu="Videos"}
+=======================================================================
+
+<iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1674401/sp/167440100/embedIframeJs/uiconf_id/23435151/partner_id/1674401?iframeembed=true&playerId=kaltura_player&entry_id=1_y83o4rgz&flashvars[streamerType]=auto&amp;flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[LeadWithHLSOnFlash]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_6rb391ao" width="608" height="402" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="Kaltura Player"></iframe>
+
+04 - Interpreting the results of the analysis, part 2 {data-navmenu="Videos"}
+=======================================================================
+
+<iframe id="kaltura_player" src="https://cdnapisec.kaltura.com/p/1674401/sp/167440100/embedIframeJs/uiconf_id/23435151/partner_id/1674401?iframeembed=true&playerId=kaltura_player&entry_id=1_mdcn9wav&flashvars[streamerType]=auto&amp;flashvars[localizationCode]=en&amp;flashvars[leadWithHTML5]=true&amp;flashvars[sideBarContainer.plugin]=true&amp;flashvars[sideBarContainer.position]=left&amp;flashvars[sideBarContainer.clickToClose]=true&amp;flashvars[chapters.plugin]=true&amp;flashvars[chapters.layout]=vertical&amp;flashvars[chapters.thumbnailRotator]=false&amp;flashvars[streamSelector.plugin]=true&amp;flashvars[EmbedPlayer.SpinnerTarget]=videoHolder&amp;flashvars[dualScreen.plugin]=true&amp;flashvars[LeadWithHLSOnFlash]=true&amp;flashvars[Kaltura.addCrossoriginToIframe]=true&amp;&wid=1_ipz1wnke" width="608" height="402" allowfullscreen webkitallowfullscreen mozAllowFullScreen allow="autoplay *; fullscreen *; encrypted-media *" sandbox="allow-forms allow-same-origin allow-scripts allow-top-navigation allow-pointer-lock allow-popups allow-modals allow-orientation-lock allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation" frameborder="0" title="Kaltura Player"></iframe>
