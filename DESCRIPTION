@@ -1,0 +1,27 @@
+Type: Compendium
+Package: TestingShinyBinderHub
+Title: Test to see if I can run a flexdashboard shiny app on myBinder.org
+Version: 0.0.1
+Authors@R: 
+    person(given = "Diogo",
+           family = "Almeida",
+           role = c("aut", "cre"),
+           email = "diogo@nyu.edu")
+Description: What the title says
+License: GPL-3
+Depends: 
+    bslib,
+    flexdashboard,
+    ggcorrplot,
+    googlesheets4,
+    holepunch,
+    reactable,
+    renv,
+    rmarkdown,
+    shiny,
+    showtext,
+    tidyverse
+Remotes: 
+    karthik/holepunch
+Encoding: UTF-8
+LazyData: true
