@@ -1,4 +1,4 @@
-FROM rocker/binder:4.2.1
+FROM rocker/shiny-verse:4.2.1
 LABEL maintainer='diogo-almeida'
 USER root
 COPY . ${HOME}
