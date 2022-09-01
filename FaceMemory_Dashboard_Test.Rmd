@@ -18,14 +18,17 @@ resource_files:
 ---
 
 ```{r setup, include=FALSE}
-library(tidyverse)
-library(flexdashboard)
-library(shiny)
-library(showtext)
-library(googlesheets4)
-library(reactable)
-library(bslib)
-library(ggcorrplot)
+install.packages("groundhog")
+library("groundhog")
+r_date <- "2022-08-31"
+groundhog.library(tidyverse, r_date)
+groundhog.library(flexdashboard, r_date)
+groundhog.library(shiny, r_date)
+groundhog.library(showtext, r_date)
+groundhog.library(googlesheets4, r_date)
+groundhog.library(reactable, r_date)
+groundhog.library(bslib, r_date)
+groundhog.library(ggcorrplot, r_date)
 
 # Calculate p-values on boot_distribution
 calculate_p <- function(obs, Bmeans, adj = c("boot", "perm")) {
