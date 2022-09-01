@@ -1,5 +1,5 @@
 ## Attempting to create research compendium with Binder
-
+library(devtools)
 library(holepunch)
 write_compendium_description(package = "TestingShinyBinderHub", 
                              description = "Testing whether I can run a shiny
